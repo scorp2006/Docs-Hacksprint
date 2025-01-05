@@ -66,13 +66,14 @@ const TaskItem = ({ task, index, columnId, onMove }: {
   drag(drop(ref))
 
   const timeSinceCreation = () => {
-    const now = new Date()
-    const diffInHours = Math.floor((now.getTime() - task.createdAt.getTime()) / (1000 * 60 * 60))
+    const now = new Date();
+    const createdAtDate = task.createdAt instanceof Date ? task.createdAt : new Date(task.createdAt);
+    const diffInHours = Math.floor((now.getTime() - createdAtDate.getTime()) / (1000 * 60 * 60));
     if (diffInHours < 24) {
-      return `${diffInHours}h ago`
+      return `${diffInHours}h ago`;
     }
-    const diffInDays = Math.floor(diffInHours / 24)
-    return `${diffInDays}d ago`
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays}d ago`;
   }
 
   return (
