@@ -72,12 +72,16 @@ export async function getUserTasks(userId: string): Promise<Task[]> {
   })) as Task[];
 }
 
-export async function updateTasksOrder(tasks: { id: string; order: number }[]): Promise<void> {
+export async function updateTasksOrder(tasks: { id: string; order: number; status: string }[]): Promise<void> {
   const batchOp = writeBatch(db);
   
   tasks.forEach(task => {
     const taskRef = doc(db, 'tasks', task.id);
-    batchOp.update(taskRef, { order: task.order });
+    batchOp.update(taskRef, { 
+      order: task.order,
+      status: task.status,
+      updatedAt: Timestamp.now()
+    });
   });
   
   await batchOp.commit();

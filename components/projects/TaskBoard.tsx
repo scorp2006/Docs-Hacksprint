@@ -229,7 +229,8 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
     // Update task orders in Firestore
     const updatedTasks = targetTasks.map((task, index) => ({
       id: task.id,
-      order: index
+      order: index,
+      status: task.status
     }));
 
     try {
@@ -307,8 +308,8 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {columns.map(column => (
-            <div key={column.id}>
+          {columns.map((column, columnIndex) => (
+            <div key={`${column.id}-${columnIndex}`}>
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
@@ -324,7 +325,7 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
                   <div className="space-y-3">
                     {column.tasks.map((task, index) => (
                       <TaskItem
-                        key={task.id}
+                        key={`${task.id}-${index}`}
                         task={task}
                         index={index}
                         columnId={column.id}
@@ -333,6 +334,7 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
                     ))}
                     {column.tasks.length === 0 && (
                       <DropZone
+                        key={`dropzone-${column.id}`}
                         columnId={column.id}
                         onDrop={handleEmptyColumnDrop}
                       />
