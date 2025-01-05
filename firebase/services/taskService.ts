@@ -1,91 +1,83 @@
 'use client';
 
-import { Task } from '@/types';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  doc,
+  updateDoc,
+  deleteDoc,
+  Timestamp,
+  orderBy,
+  writeBatch,
+} from 'firebase/firestore';
+import { db } from '../config';
+import { Task } from '@/types/task';
 
-// Mock data for development
-const mockTasks: Task[] = [
-  {
-    id: 'task-1',
-    projectId: 'mock-project-1',
-    title: 'Design User Interface',
-    description: 'Create wireframes and mockups for the main dashboard',
-    status: 'pending',
-    createdBy: 'mock-user-123',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    order: 0,
-  },
-  {
-    id: 'task-2',
-    projectId: 'mock-project-1',
-    title: 'Implement Authentication',
-    description: 'Set up Firebase authentication and user management',
-    status: 'completed',
-    createdBy: 'mock-user-123',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    order: 1,
-  },
-  {
-    id: 'task-3',
-    projectId: 'mock-project-1',
-    title: 'Create Database Schema',
-    description: 'Design and implement Firestore data structure',
-    status: 'pending',
-    createdBy: 'mock-user-123',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    order: 2,
-  },
-];
+const tasksRef = collection(db, 'tasks');
 
-export const taskService = {
-  async createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    // For development, return mock data
-    const newTask = {
-      id: `task-${mockTasks.length + 1}`,
-      ...task,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    mockTasks.push(newTask);
-    return newTask.id;
-  },
+export async function createTask(taskData: Omit<Task, 'id' | 'createdAt'>): Promise<Task> {
+  const newTask = {
+    ...taskData,
+    createdAt: Timestamp.now()
+  };
+  
+  const docRef = await addDoc(tasksRef, newTask);
+  return {
+    id: docRef.id,
+    ...newTask,
+    createdAt: newTask.createdAt.toDate()
+  };
+}
 
-  async updateTask(id: string, data: Partial<Task>): Promise<void> {
-    // For development, update mock data
-    const taskIndex = mockTasks.findIndex(t => t.id === id);
-    if (taskIndex !== -1) {
-      mockTasks[taskIndex] = {
-        ...mockTasks[taskIndex],
-        ...data,
-        updatedAt: new Date(),
-      };
-    }
-  },
+export async function updateTask(taskId: string, updates: Partial<Task>): Promise<void> {
+  const taskRef = doc(db, 'tasks', taskId);
+  await updateDoc(taskRef, updates);
+}
 
-  async deleteTask(id: string): Promise<void> {
-    // For development, remove from mock data
-    const taskIndex = mockTasks.findIndex(t => t.id === id);
-    if (taskIndex !== -1) {
-      mockTasks.splice(taskIndex, 1);
-    }
-  },
+export async function deleteTask(taskId: string): Promise<void> {
+  const taskRef = doc(db, 'tasks', taskId);
+  await deleteDoc(taskRef);
+}
 
-  async getProjectTasks(projectId: string): Promise<Task[]> {
-    // For development, return mock data
-    return mockTasks.filter(task => task.projectId === projectId)
-      .sort((a, b) => a.order - b.order);
-  },
+export async function getProjectTasks(projectId: string): Promise<Task[]> {
+  const q = query(
+    tasksRef,
+    where('projectId', '==', projectId),
+    orderBy('order', 'asc')
+  );
+  
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+    createdAt: (doc.data().createdAt as Timestamp).toDate()
+  })) as Task[];
+}
 
-  async reorderTasks(tasks: { id: string; order: number }[]): Promise<void> {
-    // For development, update mock data
-    tasks.forEach(({ id, order }) => {
-      const task = mockTasks.find(t => t.id === id);
-      if (task) {
-        task.order = order;
-        task.updatedAt = new Date();
-      }
-    });
-  },
-}; 
+export async function getUserTasks(userId: string): Promise<Task[]> {
+  const q = query(
+    tasksRef,
+    where('assignedTo', '==', userId)
+  );
+  
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+    createdAt: (doc.data().createdAt as Timestamp).toDate()
+  })) as Task[];
+}
+
+export async function updateTasksOrder(tasks: { id: string; order: number }[]): Promise<void> {
+  const batchOp = writeBatch(db);
+  
+  tasks.forEach(task => {
+    const taskRef = doc(db, 'tasks', task.id);
+    batchOp.update(taskRef, { order: task.order });
+  });
+  
+  await batchOp.commit();
+} 

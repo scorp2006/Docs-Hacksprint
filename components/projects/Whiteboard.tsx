@@ -3,6 +3,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Paintbrush, Eraser, Undo, Trash2, Square, Circle, Type } from 'lucide-react';
+import { whiteboardService } from '@/firebase/services/whiteboardService';
+import { useAuth } from '@/firebase/hooks/useAuth';
+import { WhiteboardElement } from '@/types';
 
 interface WhiteboardProps {
   projectId: string;
@@ -15,16 +18,15 @@ const COLORS = [
 ];
 
 export function Whiteboard({ projectId }: WhiteboardProps) {
+  const { user } = useAuth();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tool, setTool] = useState<Tool>('pen');
   const [color, setColor] = useState('#000000');
   const [lineWidth, setLineWidth] = useState(2);
-  const [history, setHistory] = useState<ImageData[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [elements, setElements] = useState<WhiteboardElement[]>([]);
   const contextRef = useRef<CanvasRenderingContext2D | null>(null);
-  const lastDrawnState = useRef<ImageData | null>(null);
+  const currentPath = useRef<{ x: number; y: number }[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,109 +46,117 @@ export function Whiteboard({ projectId }: WhiteboardProps) {
     context.lineCap = 'round';
     contextRef.current = context;
 
-    // Save initial state
-    saveState();
-  }, []);
+    // Subscribe to real-time updates
+    const unsubscribe = whiteboardService.subscribeToProjectElements(projectId, (updatedElements) => {
+      setElements(updatedElements);
+      redrawCanvas(updatedElements, context);
+    });
+
+    // Load initial elements
+    whiteboardService.getProjectElements(projectId).then(setElements);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [projectId]);
+
+  const redrawCanvas = (elements: WhiteboardElement[], context: CanvasRenderingContext2D) => {
+    if (!canvasRef.current) return;
+    
+    context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    
+    elements.forEach(element => {
+      context.beginPath();
+      context.strokeStyle = element.style?.color || '#000000';
+      context.lineWidth = element.style?.size || 2;
+
+      if (element.type === 'drawing') {
+        const points = element.content as { x: number; y: number }[];
+        if (points.length > 0) {
+          context.moveTo(points[0].x, points[0].y);
+          points.slice(1).forEach((point: { x: number; y: number }) => {
+            context.lineTo(point.x, point.y);
+          });
+        }
+      } else if (element.type === 'rectangle') {
+        const { width, height } = element.content as { width: number; height: number };
+        context.rect(element.position.x, element.position.y, width, height);
+      } else if (element.type === 'circle') {
+        const { radius } = element.content as { radius: number };
+        context.arc(element.position.x, element.position.y, radius, 0, 2 * Math.PI);
+      }
+
+      context.stroke();
+      context.closePath();
+    });
+  };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!contextRef.current || !user) return;
+
     const canvas = canvasRef.current;
-    if (!canvas || !contextRef.current) return;
+    if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    setStartPos({ x, y });
     setIsDrawing(true);
+    currentPath.current = [{ x, y }];
 
-    if (tool === 'pen' || tool === 'eraser') {
-      contextRef.current.beginPath();
-      contextRef.current.moveTo(x, y);
-    } else {
-      // Save the current state before starting to draw a shape
-      lastDrawnState.current = contextRef.current.getImageData(0, 0, canvas.width, canvas.height);
-    }
+    contextRef.current.beginPath();
+    contextRef.current.moveTo(x, y);
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !contextRef.current || !canvasRef.current || !startPos) return;
+    if (!isDrawing || !contextRef.current || !canvasRef.current) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    if (tool === 'pen' || tool === 'eraser') {
-      contextRef.current.lineTo(x, y);
-      contextRef.current.stroke();
-    } else {
-      // Restore the last drawn state before drawing the new preview
-      if (lastDrawnState.current) {
-        contextRef.current.putImageData(lastDrawnState.current, 0, 0);
-      }
-
-      // Draw the shape preview
-      contextRef.current.beginPath();
-      contextRef.current.strokeStyle = color;
-      contextRef.current.lineWidth = lineWidth;
-
-      if (tool === 'rectangle') {
-        const width = x - startPos.x;
-        const height = y - startPos.y;
-        contextRef.current.rect(startPos.x, startPos.y, width, height);
-      } else if (tool === 'circle') {
-        const radius = Math.sqrt(Math.pow(x - startPos.x, 2) + Math.pow(y - startPos.y, 2));
-        contextRef.current.arc(startPos.x, startPos.y, radius, 0, 2 * Math.PI);
-      }
-
-      contextRef.current.stroke();
-    }
+    currentPath.current.push({ x, y });
+    
+    contextRef.current.lineTo(x, y);
+    contextRef.current.stroke();
   };
 
-  const stopDrawing = () => {
-    if (!contextRef.current || !isDrawing) return;
+  const stopDrawing = async () => {
+    if (!isDrawing || !contextRef.current || !user || currentPath.current.length === 0) return;
 
-    if (tool === 'pen' || tool === 'eraser') {
-      contextRef.current.closePath();
+    const newElement: Omit<WhiteboardElement, 'id' | 'createdAt' | 'updatedAt'> = {
+      type: 'drawing',
+      content: currentPath.current,
+      position: { x: 0, y: 0 },
+      style: {
+        color,
+        size: lineWidth
+      },
+      createdBy: user.uid,
+      projectId
+    };
+
+    try {
+      await whiteboardService.createElement(newElement);
+    } catch (error) {
+      console.error('Error saving drawing:', error);
     }
-    
-    // Save the state after drawing is complete
-    saveState();
+
     setIsDrawing(false);
-    setStartPos(null);
-    lastDrawnState.current = null;
+    currentPath.current = [];
+    contextRef.current.closePath();
   };
 
-  const saveState = () => {
-    if (!contextRef.current || !canvasRef.current) return;
-    const imageData = contextRef.current.getImageData(
-      0,
-      0,
-      canvasRef.current.width,
-      canvasRef.current.height
-    );
-    setHistory(prev => [...prev.slice(0, historyIndex + 1), imageData]);
-    setHistoryIndex(prev => prev + 1);
-  };
+  const clearCanvas = async () => {
+    if (!contextRef.current || !canvasRef.current || !user) return;
 
-  const undo = () => {
-    if (!contextRef.current || !canvasRef.current || historyIndex < 0) return;
-    
-    const newIndex = historyIndex - 1;
-    if (newIndex >= 0) {
-      contextRef.current.putImageData(history[newIndex], 0, 0);
-      setHistoryIndex(newIndex);
-    } else {
-      contextRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      setHistoryIndex(-1);
+    try {
+      // Delete all elements
+      const deletePromises = elements.map(element => whiteboardService.deleteElement(element.id));
+      await Promise.all(deletePromises);
+    } catch (error) {
+      console.error('Error clearing canvas:', error);
     }
-  };
-
-  const clearCanvas = () => {
-    if (!contextRef.current || !canvasRef.current) return;
-    contextRef.current.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-    setHistory([]);
-    setHistoryIndex(-1);
-    lastDrawnState.current = null;
   };
 
   const updateTool = (newTool: Tool) => {
@@ -225,15 +235,6 @@ export function Whiteboard({ projectId }: WhiteboardProps) {
             className="w-24"
           />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={undo}
-          disabled={historyIndex < 0}
-        >
-          <Undo className="h-4 w-4 mr-1" />
-          Undo
-        </Button>
         <Button
           variant="outline"
           size="sm"

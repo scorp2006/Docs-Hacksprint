@@ -1,9 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/firebase/hooks/useAuth';
-import { projectService } from '@/firebase/services/projectService';
 import { Project } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { UserPlus, Mail, Trash2, Crown } from 'lucide-react';
+import { useAuth } from '@/firebase/hooks/useAuth';
 
 interface ProjectMembersProps {
   project: Project;
@@ -17,81 +21,121 @@ export default function ProjectMembers({ project }: ProjectMembersProps) {
 
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !email.trim()) return;
+    if (!email.trim()) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      // We need to add this method to projectService
-      await projectService.inviteMember(project.id, email.trim());
+      // For development, just log the invitation
+      console.log(`Inviting member with email: ${email}`);
       setEmail('');
     } catch (err) {
       console.error('Error inviting member:', err);
-      setError('Failed to invite member. Please check the email and try again.');
+      setError('Failed to invite member. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!user || memberId === project.ownerId) return;
+    if (memberId === project.ownerId) return;
 
     try {
-      // We need to add this method to projectService
-      await projectService.removeMember(project.id, memberId);
+      // For development, just log the removal
+      console.log(`Removing member: ${memberId}`);
     } catch (err) {
       console.error('Error removing member:', err);
     }
   };
 
   return (
-    <div className="w-72">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <h3 className="font-semibold mb-4">Project Members</h3>
-        
-        {user?.uid === project.ownerId && (
-          <form onSubmit={handleInviteMember} className="mb-4">
-            <div className="flex flex-col gap-2">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter email to invite"
-                className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button
-                type="submit"
-                disabled={loading || !email.trim()}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
-              >
-                {loading ? 'Inviting...' : 'Invite Member'}
-              </button>
-            </div>
-            {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-          </form>
-        )}
-
-        <div className="space-y-2">
-          {project.members.map((memberId) => (
-            <div
-              key={memberId}
-              className="flex items-center justify-between py-2 border-b last:border-b-0"
-            >
-              <span className="text-sm">
-                {memberId === project.ownerId ? '👑 Owner' : 'Member'}
-              </span>
-              {user?.uid === project.ownerId && memberId !== project.ownerId && (
-                <button
-                  onClick={() => handleRemoveMember(memberId)}
-                  className="text-red-500 hover:text-red-600 text-sm"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          ))}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Team Members</h2>
+          <p className="text-sm text-muted-foreground">
+            Manage your project team and invite new members
+          </p>
         </div>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Invite Teammate
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Invite Team Member</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleInviteMember} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email address</Label>
+                <div className="flex items-center space-x-2">
+                  <div className="relative flex-1">
+                    <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="Enter email address"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-8"
+                      required
+                    />
+                  </div>
+                </div>
+                {error && <p className="text-sm text-destructive">{error}</p>}
+              </div>
+              <DialogFooter>
+                <Button type="submit" disabled={loading || !email.trim()}>
+                  {loading ? 'Sending Invite...' : 'Send Invite'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <div className="divide-y">
+        {project.members.map((memberId) => (
+          <div
+            key={memberId}
+            className="flex items-center justify-between py-4"
+          >
+            <div className="flex items-center space-x-4">
+              <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center">
+                {memberId[0]?.toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm font-medium leading-none">
+                  {memberId === project.ownerId ? (
+                    <span className="flex items-center">
+                      User {memberId.slice(0, 8)}
+                      <Crown className="ml-2 h-4 w-4 text-yellow-500" />
+                    </span>
+                  ) : (
+                    `User ${memberId.slice(0, 8)}`
+                  )}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {memberId === project.ownerId ? 'Project Owner' : 'Team Member'}
+                </p>
+              </div>
+            </div>
+            {user?.uid === project.ownerId && memberId !== project.ownerId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRemoveMember(memberId)}
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

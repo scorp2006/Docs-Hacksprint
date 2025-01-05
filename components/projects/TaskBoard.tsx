@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { DndProvider, useDrag, useDrop } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
 import { Task } from '@/types'
@@ -8,6 +8,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { NewTaskDialog } from './NewTaskDialog'
 import { Badge } from '@/components/ui/badge'
 import { Clock, MoreVertical } from 'lucide-react'
+import { taskService } from '@/firebase/services/taskService'
+import { useAuth } from '@/firebase/hooks/useAuth'
 
 interface Column {
   id: string
@@ -18,9 +20,6 @@ interface Column {
 
 interface TaskBoardProps {
   projectId: string
-  initialTasks?: Task[]
-  onTaskCreate?: (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => void
-  onTaskMove?: (taskId: string, sourceCol: string, destCol: string, newOrder: number) => void
 }
 
 interface DragItem {
@@ -130,91 +129,131 @@ const DropZone = ({ columnId, onDrop }: { columnId: string, onDrop: (sourceCol: 
   )
 }
 
-export function TaskBoard({ projectId, initialTasks = [], onTaskCreate, onTaskMove }: TaskBoardProps) {
+export function TaskBoard({ projectId }: TaskBoardProps) {
+  const { user } = useAuth();
   const [columns, setColumns] = useState<Column[]>([
     {
       id: 'todo',
       title: 'To Do',
-      tasks: initialTasks.filter(task => task.status === 'todo').sort((a, b) => a.order - b.order),
+      tasks: [],
       color: 'bg-blue-500/10 text-blue-500'
     },
     {
       id: 'in-progress',
       title: 'In Progress',
-      tasks: initialTasks.filter(task => task.status === 'in-progress').sort((a, b) => a.order - b.order),
+      tasks: [],
       color: 'bg-yellow-500/10 text-yellow-500'
     },
     {
       id: 'done',
       title: 'Done',
-      tasks: initialTasks.filter(task => task.status === 'done').sort((a, b) => a.order - b.order),
+      tasks: [],
       color: 'bg-green-500/10 text-green-500'
     }
-  ])
+  ]);
 
-  const handleMove = (dragIndex: number, hoverIndex: number, sourceCol: string, targetCol: string) => {
-    const sourceColumn = columns.find(col => col.id === sourceCol)
-    const targetColumn = columns.find(col => col.id === targetCol)
+  useEffect(() => {
+    // Subscribe to real-time task updates
+    const unsubscribe = taskService.subscribeToProjectTasks(projectId, (tasks) => {
+      const newColumns = columns.map(col => ({
+        ...col,
+        tasks: tasks
+          .filter(task => task.status === col.id)
+          .sort((a, b) => a.order - b.order)
+      }));
+      setColumns(newColumns);
+    });
 
-    if (!sourceColumn || !targetColumn) return
+    return () => {
+      unsubscribe();
+    };
+  }, [projectId]);
 
-    const sourceTasks = Array.from(sourceColumn.tasks)
-    const targetTasks = sourceCol === targetCol ? sourceTasks : Array.from(targetColumn.tasks)
+  const handleMove = async (dragIndex: number, hoverIndex: number, sourceCol: string, targetCol: string) => {
+    const sourceColumn = columns.find(col => col.id === sourceCol);
+    const targetColumn = columns.find(col => col.id === targetCol);
 
-    const [movedTask] = sourceTasks.splice(dragIndex, 1)
+    if (!sourceColumn || !targetColumn) return;
+
+    const sourceTasks = Array.from(sourceColumn.tasks);
+    const targetTasks = sourceCol === targetCol ? sourceTasks : Array.from(targetColumn.tasks);
+
+    const [movedTask] = sourceTasks.splice(dragIndex, 1);
     targetTasks.splice(hoverIndex, 0, {
       ...movedTask,
       status: targetCol as Task['status']
-    })
+    });
 
     const newColumns = columns.map(col => {
       if (col.id === sourceCol) {
-        return { ...col, tasks: sourceTasks }
+        return { ...col, tasks: sourceTasks };
       }
       if (col.id === targetCol) {
-        return { ...col, tasks: targetTasks }
+        return { ...col, tasks: targetTasks };
       }
-      return col
-    })
+      return col;
+    });
 
-    setColumns(newColumns)
-    
-    if (onTaskMove) {
-      onTaskMove(movedTask.id, sourceCol, targetCol, hoverIndex)
+    setColumns(newColumns);
+
+    // Update task orders in Firestore
+    const updatedTasks = targetTasks.map((task, index) => ({
+      id: task.id,
+      order: index,
+      status: targetCol as Task['status']
+    }));
+
+    try {
+      await taskService.updateTasksOrder(updatedTasks);
+    } catch (error) {
+      console.error('Error updating task order:', error);
     }
-  }
+  };
 
-  const handleEmptyColumnDrop = (sourceCol: string, targetCol: string, index: number) => {
-    const sourceColumn = columns.find(col => col.id === sourceCol)
-    const targetColumn = columns.find(col => col.id === targetCol)
+  const handleEmptyColumnDrop = async (sourceCol: string, targetCol: string, index: number) => {
+    const sourceColumn = columns.find(col => col.id === sourceCol);
+    const targetColumn = columns.find(col => col.id === targetCol);
 
-    if (!sourceColumn || !targetColumn) return
+    if (!sourceColumn || !targetColumn) return;
 
-    const sourceTasks = Array.from(sourceColumn.tasks)
-    const [movedTask] = sourceTasks.splice(index, 1)
+    const sourceTasks = Array.from(sourceColumn.tasks);
+    const [movedTask] = sourceTasks.splice(index, 1);
 
     const newColumns = columns.map(col => {
       if (col.id === sourceCol) {
-        return { ...col, tasks: sourceTasks }
+        return { ...col, tasks: sourceTasks };
       }
       if (col.id === targetCol) {
-        return { ...col, tasks: [{ ...movedTask, status: targetCol as Task['status'] }] }
+        return { ...col, tasks: [{ ...movedTask, status: targetCol as Task['status'] }] };
       }
-      return col
-    })
+      return col;
+    });
 
-    setColumns(newColumns)
-    
-    if (onTaskMove) {
-      onTaskMove(movedTask.id, sourceCol, targetCol, 0)
-    }
-  }
+    setColumns(newColumns);
 
-  const handleCreateTask = (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => {
-    if (onTaskCreate) {
-      onTaskCreate(task)
+    try {
+      await taskService.updateTasksOrder([{
+        id: movedTask.id,
+        order: 0,
+        status: targetCol as Task['status']
+      }]);
+    } catch (error) {
+      console.error('Error updating task status:', error);
     }
-  }
+  };
+
+  const handleCreateTask = async (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => {
+    if (!user) return;
+
+    try {
+      await taskService.createTask({
+        ...task,
+        order: columns.find(col => col.id === 'todo')?.tasks.length || 0
+      });
+    } catch (error) {
+      console.error('Error creating task:', error);
+    }
+  };
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -268,5 +307,5 @@ export function TaskBoard({ projectId, initialTasks = [], onTaskCreate, onTaskMo
         </div>
       </div>
     </DndProvider>
-  )
+  );
 } 

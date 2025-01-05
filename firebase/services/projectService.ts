@@ -1,85 +1,123 @@
 'use client';
 
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  query, 
-  where, 
-  getDocs, 
-  Timestamp, 
-  serverTimestamp, 
-  getDoc, 
-  arrayUnion, 
-  arrayRemove,
-  DocumentReference,
-  CollectionReference
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  addDoc,
+  doc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
+  Timestamp,
 } from 'firebase/firestore';
 import { db } from '../config';
-import { Project } from '@/types';
+import { Project } from '@/types/project';
 
-const COLLECTION = 'projects';
+const projectsRef = collection(db, 'projects');
 
-// Mock data for development
-const mockProjects: Project[] = [
-  {
-    id: 'mock-project-1',
-    name: 'Sample Project',
-    description: 'A sample project for development',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ownerId: 'mock-user-123',
-    members: ['mock-user-123'],
-  },
-  {
-    id: 'mock-project-2',
-    name: 'Another Project',
-    description: 'Another sample project',
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ownerId: 'mock-user-123',
-    members: ['mock-user-123'],
+export async function getAllProjects(userId: string): Promise<Project[]> {
+  console.log('Getting all projects for user:', userId);
+  try {
+    const q = query(
+      projectsRef,
+      where('members', 'array-contains', userId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    console.log('Found projects:', querySnapshot.size);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: (doc.data().createdAt as Timestamp).toDate()
+    })) as Project[];
+  } catch (error) {
+    console.error('Error in getAllProjects:', error);
+    throw error;
   }
-];
+}
 
-// Get the collection reference once
-const projectsRef: CollectionReference = collection(db, COLLECTION);
+export async function createProject(projectData: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
+  console.log('Creating project with data:', projectData);
+  try {
+    const newProject = {
+      ...projectData,
+      createdAt: Timestamp.now(),
+      members: [projectData.createdBy], // Ensure creator is a member
+      status: projectData.status || 'active'
+    };
+    
+    console.log('Prepared project data:', newProject);
+    const docRef = await addDoc(projectsRef, newProject);
+    console.log('Created project with ID:', docRef.id);
+    
+    const projectDoc = await getDoc(docRef);
+    
+    if (!projectDoc.exists()) {
+      throw new Error('Failed to create project');
+    }
+    
+    const createdProject = {
+      id: docRef.id,
+      ...projectDoc.data(),
+      createdAt: (projectDoc.data().createdAt as Timestamp).toDate()
+    } as Project;
+    
+    console.log('Returning created project:', createdProject);
+    return createdProject;
+  } catch (error) {
+    console.error('Error in createProject:', error);
+    throw error;
+  }
+}
 
-export const projectService = {
-  async createProject(project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-    // For development, return mock data
-    return 'mock-project-' + (mockProjects.length + 1);
-  },
+export async function getProject(projectId: string): Promise<Project | null> {
+  console.log('Getting project:', projectId);
+  try {
+    const projectRef = doc(db, 'projects', projectId);
+    const projectDoc = await getDoc(projectRef);
+    
+    if (!projectDoc.exists()) {
+      console.log('Project not found:', projectId);
+      return null;
+    }
+    
+    const project = {
+      id: projectDoc.id,
+      ...projectDoc.data(),
+      createdAt: (projectDoc.data().createdAt as Timestamp).toDate()
+    } as Project;
+    
+    console.log('Found project:', project);
+    return project;
+  } catch (error) {
+    console.error('Error in getProject:', error);
+    throw error;
+  }
+}
 
-  async updateProject(id: string, data: Partial<Project>): Promise<void> {
-    // No-op for development
-    return;
-  },
+export async function updateProject(projectId: string, updates: Partial<Project>): Promise<void> {
+  console.log('Updating project:', projectId, 'with updates:', updates);
+  try {
+    const projectRef = doc(db, 'projects', projectId);
+    await updateDoc(projectRef, updates);
+    console.log('Project updated successfully');
+  } catch (error) {
+    console.error('Error in updateProject:', error);
+    throw error;
+  }
+}
 
-  async deleteProject(id: string): Promise<void> {
-    // No-op for development
-    return;
-  },
-
-  async getProject(id: string): Promise<Project | null> {
-    // For development, return mock data
-    return mockProjects.find(p => p.id === id) || null;
-  },
-
-  async getUserProjects(userId: string): Promise<Project[]> {
-    // For development, return mock data
-    return mockProjects;
-  },
-
-  async inviteMember(projectId: string, email: string): Promise<void> {
-    // No-op for development
-    return;
-  },
-
-  async removeMember(projectId: string, userId: string): Promise<void> {
-    // No-op for development
-    return;
-  },
-}; 
+export async function deleteProject(projectId: string): Promise<void> {
+  console.log('Deleting project:', projectId);
+  try {
+    const projectRef = doc(db, 'projects', projectId);
+    await deleteDoc(projectRef);
+    console.log('Project deleted successfully');
+  } catch (error) {
+    console.error('Error in deleteProject:', error);
+    throw error;
+  }
+} 

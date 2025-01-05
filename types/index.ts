@@ -1,32 +1,41 @@
 export interface User {
-  id: string;
+  uid: string;
   email: string;
-  displayName: string | null;
-  photoURL: string | null;
+  displayName: string;
+  photoURL?: string;
+  projects?: string[];
 }
 
 export interface Project {
   id: string;
   name: string;
-  description: string;
+  description?: string;
+  createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  members: string[];
+  status: 'active' | 'archived';
 }
 
 export interface Task {
   id: string;
-  projectId: string;
   title: string;
   description?: string;
   status: 'todo' | 'in-progress' | 'done';
+  order: number;
+  projectId: string;
+  assignedTo?: string;
+  createdBy: string;
   createdAt: Date;
   updatedAt: Date;
-  order: number;
+  dueDate?: Date;
+  priority?: 'low' | 'medium' | 'high';
+  tags?: string[];
 }
 
 export interface WhiteboardElement {
   id: string;
-  type: 'sticky' | 'shape' | 'drawing' | 'text';
+  type: 'drawing' | 'rectangle' | 'circle' | 'text';
   content: any;
   position: {
     x: number;
@@ -38,6 +47,7 @@ export interface WhiteboardElement {
     [key: string]: any;
   };
   createdBy: string;
+  projectId: string;
   createdAt: Date;
   updatedAt: Date;
 }

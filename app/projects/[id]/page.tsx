@@ -6,7 +6,7 @@ import { Project, Task } from '@/types'
 import { TaskBoard } from '@/components/projects/TaskBoard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, Users } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
 // Import Excalidraw dynamically to avoid SSR issues
@@ -17,6 +17,18 @@ const Whiteboard = dynamic(
     loading: () => (
       <div className="flex items-center justify-center min-h-[500px]">
         Loading whiteboard...
+      </div>
+    ),
+  }
+)
+
+// Import ProjectMembers component
+const ProjectMembers = dynamic(
+  () => import('@/components/projects/ProjectMembers'),
+  {
+    loading: () => (
+      <div className="flex items-center justify-center min-h-[200px]">
+        Loading members...
       </div>
     ),
   }
@@ -35,7 +47,9 @@ export default function ProjectPage() {
       name: 'Sample Project',
       description: 'This is a sample project description that explains what this project is about and what we aim to achieve.',
       createdAt: new Date(),
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      ownerId: 'mock-user-123',
+      members: ['mock-user-123']
     }
 
     const mockTasks: Task[] = [
@@ -118,18 +132,25 @@ export default function ProjectPage() {
                 <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
                 <p className="text-gray-600 max-w-2xl">{project.description}</p>
               </div>
-              <div className="flex items-center text-sm text-muted-foreground">
-                <CalendarDays className="mr-2 h-4 w-4" />
-                Created {project.createdAt.toLocaleDateString()}
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <div className="flex items-center">
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Created {project.createdAt.toLocaleDateString()}
+                </div>
+                <div className="flex items-center">
+                  <Users className="mr-2 h-4 w-4" />
+                  {project.members.length} member{project.members.length !== 1 ? 's' : ''}
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Tabs defaultValue="tasks" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
             <TabsTrigger value="tasks">Tasks</TabsTrigger>
             <TabsTrigger value="whiteboard">Whiteboard</TabsTrigger>
+            <TabsTrigger value="members">Members</TabsTrigger>
           </TabsList>
 
           <TabsContent value="tasks" className="space-y-4">
@@ -147,6 +168,14 @@ export default function ProjectPage() {
                 <div className="h-[600px] w-full">
                   <Whiteboard projectId={project.id} />
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="members">
+            <Card>
+              <CardContent className="pt-6">
+                <ProjectMembers project={project} />
               </CardContent>
             </Card>
           </TabsContent>

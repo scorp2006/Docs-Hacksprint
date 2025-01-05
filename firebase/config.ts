@@ -1,22 +1,36 @@
 'use client';
 
-import { initializeApp, getApp, getApps } from 'firebase/app';
+import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { getAnalytics } from 'firebase/analytics';
+import { getAnalytics, Analytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDCPk67kYH9SW7lH21IBf4cZTxpD54Kk8s",
-  authDomain: "idea-hub-106e8.firebaseapp.com",
-  projectId: "idea-hub-106e8",
-  storageBucket: "idea-hub-106e8.firebasestorage.app",
-  messagingSenderId: "662734909104",
-  appId: "1:662734909104:web:1720b1ebbe00a90b791575",
-  measurementId: "G-871JJMTC0D"
-};
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
+} as const;
+
+// Validate required config values
+const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'appId'] as const;
+for (const key of requiredKeys) {
+  if (!firebaseConfig[key]) {
+    throw new Error(`Missing required Firebase configuration value: ${key}`);
+  }
+}
 
 // Initialize Firebase
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+let app: FirebaseApp;
+try {
+  app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+} catch (error) {
+  console.error('Error initializing Firebase:', error);
+  throw error;
+}
 
 // Initialize Firestore
 const db = getFirestore(app);
@@ -25,9 +39,18 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 // Initialize Analytics only on client side
-let analytics = null;
+let analytics: Analytics | null = null;
 if (typeof window !== 'undefined') {
-  analytics = getAnalytics(app);
+  // Check if analytics is supported before initializing
+  isSupported()
+    .then(supported => {
+      if (supported && firebaseConfig.measurementId) {
+        analytics = getAnalytics(app);
+      }
+    })
+    .catch(error => {
+      console.error('Error checking analytics support:', error);
+    });
 }
 
 export { app, db, auth, analytics }; 
