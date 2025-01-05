@@ -24,13 +24,17 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    const loadStats = async () => {
-      if (!user) return;
+    if (!user?.uid) {
+      router.push('/');
+      return;
+    }
 
+    const loadStats = async () => {
+      const userId = user.uid;
       try {
         const [projects, tasks] = await Promise.all([
-          getAllProjects(user.uid),
-          getUserTasks(user.uid)
+          getAllProjects(userId),
+          getUserTasks(userId)
         ]);
         
         setStats({
@@ -47,7 +51,7 @@ export default function ProfilePage() {
     };
 
     loadStats();
-  }, [user]);
+  }, [user, router]);
 
   const handleSignOut = async () => {
     try {
@@ -58,17 +62,16 @@ export default function ProfilePage() {
     }
   };
 
-  if (!user) {
-    router.push('/');
-    return null;
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (
@@ -78,12 +81,12 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <Avatar className="h-20 w-20">
-                <AvatarImage src={user.photoURL || undefined} alt={user.displayName || 'User'} />
-                <AvatarFallback>{user.displayName?.[0] || 'U'}</AvatarFallback>
+                <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || 'User'} />
+                <AvatarFallback>{user?.displayName?.[0] || 'U'}</AvatarFallback>
               </Avatar>
               <div>
-                <h1 className="text-2xl font-bold">{user.displayName}</h1>
-                <p className="text-gray-600">{user.email}</p>
+                <h1 className="text-2xl font-bold">{user?.displayName || 'User'}</h1>
+                <p className="text-gray-600">{user?.email}</p>
               </div>
             </div>
             <Button onClick={handleSignOut} variant="outline" className="gap-2">

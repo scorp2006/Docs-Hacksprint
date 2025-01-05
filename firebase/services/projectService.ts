@@ -11,6 +11,8 @@ import {
   updateDoc,
   deleteDoc,
   Timestamp,
+  arrayUnion,
+  arrayRemove
 } from 'firebase/firestore';
 import { db } from '../config';
 import { Project } from '@/types/project';
@@ -120,4 +122,87 @@ export async function deleteProject(projectId: string): Promise<void> {
     console.error('Error in deleteProject:', error);
     throw error;
   }
-} 
+}
+
+export async function inviteMemberToProject(projectId: string, memberEmail: string): Promise<void> {
+  console.log('Inviting member to project:', projectId, 'email:', memberEmail);
+  try {
+    // First, find the user by email
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('email', '==', memberEmail));
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      throw new Error('User not found with this email');
+    }
+    
+    const userId = querySnapshot.docs[0].id;
+    const projectRef = doc(db, 'projects', projectId);
+    
+    // Add the user to the project members
+    await updateDoc(projectRef, {
+      members: arrayUnion(userId)
+    });
+    
+    console.log('Member added successfully');
+  } catch (error) {
+    console.error('Error in inviteMemberToProject:', error);
+    throw error;
+  }
+}
+
+export async function removeMemberFromProject(projectId: string, memberId: string): Promise<void> {
+  console.log('Removing member from project:', projectId, 'memberId:', memberId);
+  try {
+    const projectRef = doc(db, 'projects', projectId);
+    
+    await updateDoc(projectRef, {
+      members: arrayRemove(memberId)
+    });
+    
+    console.log('Member removed successfully');
+  } catch (error) {
+    console.error('Error in removeMemberFromProject:', error);
+    throw error;
+  }
+}
+
+export async function getProjectMembers(projectId: string): Promise<{ id: string; email: string; displayName: string }[]> {
+  console.log('Getting members for project:', projectId);
+  try {
+    const projectRef = doc(db, 'projects', projectId);
+    const projectDoc = await getDoc(projectRef);
+    
+    if (!projectDoc.exists()) {
+      throw new Error('Project not found');
+    }
+    
+    const memberIds = projectDoc.data().members || [];
+    const usersRef = collection(db, 'users');
+    const members = await Promise.all(
+      memberIds.map(async (memberId: string) => {
+        const userDoc = await getDoc(doc(usersRef, memberId));
+        return {
+          id: userDoc.id,
+          ...userDoc.data()
+        };
+      })
+    );
+    
+    return members;
+  } catch (error) {
+    console.error('Error in getProjectMembers:', error);
+    throw error;
+  }
+}
+
+export const projectService = {
+  getAllProjects,
+  createProject,
+  getProject,
+  updateProject,
+  deleteProject,
+  inviteMemberToProject,
+  removeMemberFromProject,
+  getProjectMembers
+}; 

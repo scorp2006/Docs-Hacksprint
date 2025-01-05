@@ -12,7 +12,7 @@ import { taskService } from '@/firebase/services/taskService'
 import { useAuth } from '@/firebase/hooks/useAuth'
 
 interface Column {
-  id: string
+  id: Task['status']
   title: string
   tasks: Task[]
   color: string
@@ -25,15 +25,15 @@ interface TaskBoardProps {
 interface DragItem {
   id: string
   index: number
-  columnId: string
+  columnId: Task['status']
   type: string
 }
 
 const TaskItem = ({ task, index, columnId, onMove }: {
   task: Task
   index: number
-  columnId: string
-  onMove: (dragIndex: number, hoverIndex: number, sourceCol: string, targetCol: string) => void
+  columnId: Task['status']
+  onMove: (dragIndex: number, hoverIndex: number, sourceCol: Task['status'], targetCol: Task['status']) => void
 }) => {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -106,7 +106,10 @@ const TaskItem = ({ task, index, columnId, onMove }: {
   )
 }
 
-const DropZone = ({ columnId, onDrop }: { columnId: string, onDrop: (sourceCol: string, targetCol: string, index: number) => void }) => {
+const DropZone = ({ columnId, onDrop }: { 
+  columnId: Task['status'], 
+  onDrop: (sourceCol: Task['status'], targetCol: Task['status'], index: number) => void 
+}) => {
   const [{ isOver }, drop] = useDrop({
     accept: 'TASK',
     drop: (item: DragItem) => {
@@ -121,7 +124,7 @@ const DropZone = ({ columnId, onDrop }: { columnId: string, onDrop: (sourceCol: 
 
   return (
     <div
-      ref={drop}
+      ref={drop as any}
       className={`h-full min-h-[200px] w-full rounded-lg ${
         isOver ? 'bg-muted/50' : ''
       }`}
@@ -145,31 +148,56 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
       color: 'bg-yellow-500/10 text-yellow-500'
     },
     {
-      id: 'done',
-      title: 'Done',
+      id: 'completed',
+      title: 'Completed',
       tasks: [],
       color: 'bg-green-500/10 text-green-500'
     }
   ]);
 
   useEffect(() => {
-    // Subscribe to real-time task updates
-    const unsubscribe = taskService.subscribeToProjectTasks(projectId, (tasks) => {
-      const newColumns = columns.map(col => ({
-        ...col,
-        tasks: tasks
-          .filter(task => task.status === col.id)
-          .sort((a, b) => a.order - b.order)
-      }));
-      setColumns(newColumns);
-    });
+    let unsubscribe: () => void;
+    
+    const setupSubscription = async () => {
+      try {
+        unsubscribe = taskService.subscribeToProjectTasks(projectId, (tasks) => {
+          setColumns(prevColumns => 
+            prevColumns.map(col => ({
+              ...col,
+              tasks: tasks
+                .filter(task => task.status === col.id)
+                .sort((a, b) => a.order - b.order)
+            }))
+          );
+        });
+      } catch (error) {
+        console.error('Error subscribing to tasks:', error);
+        try {
+          const tasks = await taskService.getProjectTasks(projectId);
+          setColumns(prevColumns => 
+            prevColumns.map(col => ({
+              ...col,
+              tasks: tasks
+                .filter(task => task.status === col.id)
+                .sort((a, b) => a.order - b.order)
+            }))
+          );
+        } catch (fetchError) {
+          console.error('Error fetching tasks:', fetchError);
+        }
+      }
+    };
+
+    setupSubscription();
 
     return () => {
-      unsubscribe();
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [projectId]);
 
-  const handleMove = async (dragIndex: number, hoverIndex: number, sourceCol: string, targetCol: string) => {
+  const handleMove = async (dragIndex: number, hoverIndex: number, sourceCol: Task['status'], targetCol: Task['status']) => {
     const sourceColumn = columns.find(col => col.id === sourceCol);
     const targetColumn = columns.find(col => col.id === targetCol);
 
@@ -181,7 +209,8 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
     const [movedTask] = sourceTasks.splice(dragIndex, 1);
     targetTasks.splice(hoverIndex, 0, {
       ...movedTask,
-      status: targetCol as Task['status']
+      status: targetCol,
+      updatedAt: new Date()
     });
 
     const newColumns = columns.map(col => {
@@ -199,32 +228,36 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
     // Update task orders in Firestore
     const updatedTasks = targetTasks.map((task, index) => ({
       id: task.id,
-      order: index,
-      status: targetCol as Task['status']
+      order: index
     }));
 
     try {
       await taskService.updateTasksOrder(updatedTasks);
+      // Update the task's status separately
+      await taskService.updateTask(movedTask.id, { 
+        status: targetCol,
+        updatedAt: new Date()
+      });
     } catch (error) {
-      console.error('Error updating task order:', error);
+      console.error('Error updating task:', error);
     }
   };
 
-  const handleEmptyColumnDrop = async (sourceCol: string, targetCol: string, index: number) => {
+  const handleEmptyColumnDrop = async (sourceCol: Task['status'], targetCol: Task['status'], index: number) => {
     const sourceColumn = columns.find(col => col.id === sourceCol);
-    const targetColumn = columns.find(col => col.id === targetCol);
+    if (!sourceColumn || sourceColumn.tasks.length === 0) return;
 
-    if (!sourceColumn || !targetColumn) return;
-
-    const sourceTasks = Array.from(sourceColumn.tasks);
-    const [movedTask] = sourceTasks.splice(index, 1);
-
+    const movedTask = sourceColumn.tasks[0];
+    const now = new Date();
     const newColumns = columns.map(col => {
       if (col.id === sourceCol) {
-        return { ...col, tasks: sourceTasks };
+        return { ...col, tasks: col.tasks.slice(1) };
       }
       if (col.id === targetCol) {
-        return { ...col, tasks: [{ ...movedTask, status: targetCol as Task['status'] }] };
+        return { 
+          ...col, 
+          tasks: [{ ...movedTask, status: targetCol, updatedAt: now }]
+        };
       }
       return col;
     });
@@ -232,23 +265,27 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
     setColumns(newColumns);
 
     try {
-      await taskService.updateTasksOrder([{
-        id: movedTask.id,
+      await taskService.updateTask(movedTask.id, {
+        status: targetCol,
         order: 0,
-        status: targetCol as Task['status']
-      }]);
+        updatedAt: now
+      });
     } catch (error) {
-      console.error('Error updating task status:', error);
+      console.error('Error updating task:', error);
     }
   };
 
-  const handleCreateTask = async (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => {
+  const handleCreateTask = async (taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => {
     if (!user) return;
 
+    const now = new Date();
     try {
       await taskService.createTask({
-        ...task,
-        order: columns.find(col => col.id === 'todo')?.tasks.length || 0
+        ...taskData,
+        status: 'todo',
+        order: columns.find(col => col.id === 'todo')?.tasks.length || 0,
+        createdBy: user.uid,
+        updatedAt: now
       });
     } catch (error) {
       console.error('Error creating task:', error);

@@ -12,6 +12,7 @@ import {
   Timestamp,
   orderBy,
   writeBatch,
+  onSnapshot
 } from 'firebase/firestore';
 import { db } from '../config';
 import { Task } from '@/types/task';
@@ -80,4 +81,32 @@ export async function updateTasksOrder(tasks: { id: string; order: number }[]): 
   });
   
   await batchOp.commit();
-} 
+}
+
+export function subscribeToProjectTasks(projectId: string, callback: (tasks: Task[]) => void) {
+  const q = query(
+    tasksRef,
+    where('projectId', '==', projectId),
+    orderBy('order', 'asc')
+  );
+  
+  return onSnapshot(q, (snapshot) => {
+    const tasks = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: (doc.data().createdAt as Timestamp).toDate()
+    })) as Task[];
+    callback(tasks);
+  });
+}
+
+export * from './taskService';
+export const taskService = {
+  createTask,
+  updateTask,
+  deleteTask,
+  getProjectTasks,
+  getUserTasks,
+  updateTasksOrder,
+  subscribeToProjectTasks
+};

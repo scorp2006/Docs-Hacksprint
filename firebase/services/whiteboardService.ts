@@ -26,6 +26,14 @@ const COLLECTION = 'whiteboardElements';
 // Get the collection reference once
 const whiteboardElementsRef: CollectionReference = collection(db, COLLECTION);
 
+// Helper function to safely convert Firestore timestamp to Date
+const convertTimestamp = (timestamp: Timestamp | null): Date => {
+  if (!timestamp) {
+    return new Date(); // Return current date as fallback
+  }
+  return timestamp.toDate();
+};
+
 export const whiteboardService = {
   async createElement(element: Omit<WhiteboardElement, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const docRef = await addDoc(whiteboardElementsRef, {
@@ -56,12 +64,15 @@ export const whiteboardService = {
     );
     
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: (doc.data().createdAt as Timestamp).toDate(),
-      updatedAt: (doc.data().updatedAt as Timestamp).toDate(),
-    })) as WhiteboardElement[];
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: convertTimestamp(data.createdAt as Timestamp),
+        updatedAt: convertTimestamp(data.updatedAt as Timestamp),
+      } as WhiteboardElement;
+    });
   },
 
   async updateElements(projectId: string, elements: Partial<WhiteboardElement>[]): Promise<void> {
@@ -84,12 +95,15 @@ export const whiteboardService = {
     return onSnapshot(
       query(whiteboardElementsRef, where('projectId', '==', projectId)),
       (snapshot: QuerySnapshot<DocumentData>) => {
-        const elements = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          createdAt: (doc.data().createdAt as Timestamp).toDate(),
-          updatedAt: (doc.data().updatedAt as Timestamp).toDate(),
-        })) as WhiteboardElement[];
+        const elements = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: convertTimestamp(data.createdAt as Timestamp),
+            updatedAt: convertTimestamp(data.updatedAt as Timestamp),
+          } as WhiteboardElement;
+        });
         callback(elements);
       }
     );

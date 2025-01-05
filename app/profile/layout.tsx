@@ -8,9 +8,9 @@ export default function ProfileLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
+    <>
       <TopNav />
       {children}
-    </div>
+    </>
   );
 } 

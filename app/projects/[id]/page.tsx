@@ -6,8 +6,11 @@ import { Project, Task } from '@/types'
 import { TaskBoard } from '@/components/projects/TaskBoard'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
-import { CalendarDays, Users } from 'lucide-react'
+import { CalendarDays, Users, ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { useAuth } from '@/firebase/hooks/useAuth'
 
 // Import Excalidraw dynamically to avoid SSR issues
 const Whiteboard = dynamic(
@@ -36,11 +39,14 @@ const ProjectMembers = dynamic(
 
 export default function ProjectPage() {
   const params = useParams()
+  const router = useRouter()
+  const { user } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!user) return;
+
     // Mock data for now
     const mockProject: Project = {
       id: params.id as string,
@@ -48,63 +54,14 @@ export default function ProjectPage() {
       description: 'This is a sample project description that explains what this project is about and what we aim to achieve.',
       createdAt: new Date(),
       updatedAt: new Date(),
-      ownerId: 'mock-user-123',
-      members: ['mock-user-123']
+      createdBy: user.uid,
+      members: [user.uid],
+      status: 'active'
     }
-
-    const mockTasks: Task[] = [
-      {
-        id: '1',
-        projectId: params.id as string,
-        title: 'Task 1',
-        description: 'This is task 1',
-        status: 'todo',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        order: 0
-      },
-      {
-        id: '2',
-        projectId: params.id as string,
-        title: 'Task 2',
-        description: 'This is task 2',
-        status: 'in-progress',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        order: 0
-      }
-    ]
 
     setProject(mockProject)
-    setTasks(mockTasks)
     setLoading(false)
-  }, [params.id])
-
-  const handleCreateTask = (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'order'>) => {
-    const newTask: Task = {
-      id: Math.random().toString(36).substr(2, 9),
-      ...task,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      order: tasks.length
-    }
-    setTasks([...tasks, newTask])
-  }
-
-  const handleTaskMove = (taskId: string, sourceCol: string, destCol: string, newOrder: number) => {
-    const updatedTasks = tasks.map(task => {
-      if (task.id === taskId) {
-        return {
-          ...task,
-          status: destCol as Task['status'],
-          order: newOrder,
-          updatedAt: new Date()
-        }
-      }
-      return task
-    })
-    setTasks(updatedTasks)
-  }
+  }, [params.id, user])
 
   if (loading) {
     return (
@@ -129,6 +86,17 @@ export default function ProjectPage() {
           <CardContent className="pt-6">
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
               <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => router.push('/')}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Back to Projects
+                  </Button>
+                </div>
                 <h1 className="text-3xl font-bold mb-2">{project.name}</h1>
                 <p className="text-gray-600 max-w-2xl">{project.description}</p>
               </div>
@@ -154,12 +122,7 @@ export default function ProjectPage() {
           </TabsList>
 
           <TabsContent value="tasks" className="space-y-4">
-            <TaskBoard
-              projectId={project.id}
-              initialTasks={tasks}
-              onTaskCreate={handleCreateTask}
-              onTaskMove={handleTaskMove}
-            />
+            <TaskBoard projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="whiteboard">
